@@ -6,8 +6,8 @@ const bodyParser = require('body-parser');
 const Airtable = require('airtable');
 
 const app = express();
-const slack = new WebClient(process.env.TOKEN);
-const userSlack = new WebClient(process.env.USER_TOKEN);
+const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+const userSlack = new WebClient(process.env.SLACK_APP_TOKEN);
 const port = process.env.PORT;
 
 const bannedWords = process.env.BANNED_WORDS
@@ -35,7 +35,7 @@ function verifySlackRequest(req, res, buf) {
   const mySignature =
     'v0=' +
     crypto
-      .createHmac('sha256', process.env.SIGNING)
+      .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
       .update(sigBaseString)
       .digest('hex');
   const slackSignature = req.headers['x-slack-signature'];
@@ -72,8 +72,8 @@ app.post('/slack/events', async (req, res) => {
       const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
       await slack.chat.postMessage({
-        channel: process.env.FIREHOUSE,
-        text: `:siren-real: <@U062U3SQ2T1> ${matchedWords.join(', ')} :siren-real:\n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
+        channel: 'C07FL3G62LF',
+        text: `:siren-real: Message "${event.text}" auto deleted in <#${event.channel}>. It was sent by: <@${event.user}>. :siren-real: \n 🔗 <${permalink.permalink}> \n Reply with :white_check_mark: once dealt with.`
       });
 
       await userSlack.chat.delete({
