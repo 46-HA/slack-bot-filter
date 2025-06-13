@@ -18,7 +18,6 @@ let botUserId;
   try {
     const authRes = await slack.auth.test();
     botUserId = authRes.user_id;
-    console.log('Bot User ID:', botUserId);
   } catch (e) {
     console.error('Failed to get bot user ID:', e);
     process.exit(1);
@@ -49,7 +48,7 @@ app.use((req, res, next) => {
   if (req.headers['x-slack-signature']) {
     try {
       bodyParser.json({ verify: verifySlackRequest })(req, res, next);
-    } catch (err) {
+    } catch {
       return res.status(400).send('Bad signature');
     }
   } else {
@@ -64,18 +63,18 @@ app.post('/slack/events', async (req, res) => {
     return res.status(200).send({ challenge });
   }
   if (event && event.type === 'message' && !event.subtype) {
-    // Exclude bot's own messages
     if (event.user === botUserId) return res.sendStatus(200);
 
     const text = event.text?.toLowerCase();
     if (!text) return res.sendStatus(200);
 
-    const matched = bannedWords.find(word => text.includes(word));
-    if (!matched) return res.sendStatus(200);
+    const matchedWords = bannedWords.filter(word => text.includes(word));
+    if (matchedWords.length === 0) return res.sendStatus(200);
+
+    const uniqueMatchedWords = [...new Set(matchedWords)];
 
     try {
       const firehouseChannelId = process.env.FIREHOUSE;
-
       if (!firehouseChannelId) {
         console.error('FIREHOUSE env variable (channel ID) not set');
         return res.sendStatus(200);
@@ -91,10 +90,8 @@ app.post('/slack/events', async (req, res) => {
 
       await slack.chat.postMessage({
         channel: firehouseChannelId,
-        text: `@hussein \`${matched}\`\n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
+        text: `@hussein \`${uniqueMatchedWords.join('`, `')}\`\n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
       });
-
-      console.log(`logged banned word: ${matched} from ${event.user}`);
     } catch (err) {
       console.error('error:', err);
     }
