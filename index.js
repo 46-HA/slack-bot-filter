@@ -90,7 +90,7 @@ app.post('/slack/events', async (req, res) => {
 
       await slack.chat.postMessage({
         channel: firehouseChannelId,
-        text: `@hussein \`${uniqueMatchedWords.join('`, `')}\`\n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
+        text: `@hussein ${uniqueMatchedWords.join(', ')}\n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
       });
     } catch (err) {
       console.error('error:', err);
