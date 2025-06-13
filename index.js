@@ -3,6 +3,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { WebClient } = require('@slack/web-api');
 const bodyParser = require('body-parser');
+const Airtable = require('airtable');
 
 const app = express();
 const slack = new WebClient(process.env.TOKEN);
@@ -12,6 +13,9 @@ const port = process.env.PORT;
 const bannedWords = process.env.BANNED_WORDS
   ? process.env.BANNED_WORDS.split(',').map(w => w.trim().toLowerCase())
   : [];
+
+const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
+const airtableTable = process.env.AIRTABLE_TABLE;
 
 let botUserId;
 
@@ -96,6 +100,12 @@ app.post('/slack/events', async (req, res) => {
           'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
           'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
           'Please try to keep Hack Club a safe space for everyone. Thank you.'
+      });
+
+      await base(airtableTable).create({
+        "Display Name (user)": username,
+        "User ID": event.user,
+        "Message": event.text
       });
 
     } catch (err) {

@@ -11,7 +11,7 @@ Clone the repo
 
 ### **Step 2**
 Install dependencies by running:
-`npm install express crypto @slack/web-api body-parser dotenv`
+`npm install express crypto @slack/web-api body-parser dotenv airtable`
 
 ### **Step 3**
 Create a `.env` file and add the following variables:
@@ -21,7 +21,11 @@ USER_TOKEN=(user-token)
 SIGNING=(signing-secret)
 FIREHOUSE=(channel ID to send the logs to)
 BANNED_WORDS=(bad words, use this format: bad,word,chicken)
-PORT=(port number your server will run on)`
+PORT=(port number your server will run on)
+AIRTABLE_API_KEY=(personal access key)
+AIRTABLE_BASE_ID=(base id)
+AIRTABLE_TABLE=(name of the table)
+`
 
 ### **Step 4**
 On your Slack app settings:
@@ -35,3 +39,20 @@ Add the necessary OAuth scopes for the **user token**:
 Enable Event Subscriptions and set the Request URL to your endpoint (e.g. your server URL).
 
 Subscribe to: `message.channels`
+
+### **Step 5: Airtable **
+
+Get a personal access token, link it to your base. Make sure to enable these **Scopes**: 
+     ```
+     data.records:read
+     data.records:write
+     schema.bases:read
+     ```
+     Once created, put the token in your `.env` as `AIRTABLE_API_KEY`.
+
+ In your Airtable table, make sure it includes these columns:
+   - `"Display Name (user)"` (Single line text)
+   - `"User ID"` (Single line text)
+   - `"Message"` (Long text)
+
+This logs all messages
