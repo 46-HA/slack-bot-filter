@@ -19,6 +19,7 @@ let botUserId;
     const authRes = await slack.auth.test();
     botUserId = authRes.user_id;
   } catch (e) {
+    console.error('Failed to get bot user ID:', e);
     process.exit(1);
   }
 })();
@@ -62,22 +63,19 @@ app.post('/slack/events', async (req, res) => {
     return res.status(200).send({ challenge });
   }
   if (event && event.type === 'message' && !event.subtype) {
-    // Exclude bot's own messages
     if (event.user === botUserId) return res.sendStatus(200);
 
     const text = event.text?.toLowerCase();
     if (!text) return res.sendStatus(200);
 
-    const matched = bannedWords.find(word => text.includes(word));
-    if (!matched) return res.sendStatus(200);
+    const matchedWords = bannedWords.filter(word => text.includes(word));
+    if (matchedWords.length === 0) return res.sendStatus(200);
+
+    const uniqueMatchedWords = [...new Set(matchedWords)];
 
     try {
       const firehouseChannelId = process.env.FIREHOUSE;
-
-      if (!firehouseChannelId) {
-        console.error('FIREHOUSE env variable (channel ID) not set');
-        return res.sendStatus(200);
-      }
+      if (!firehouseChannelId) return res.sendStatus(200);
 
       const permalink = await slack.chat.getPermalink({
         channel: event.channel,
@@ -89,16 +87,17 @@ app.post('/slack/events', async (req, res) => {
 
       await slack.chat.postMessage({
         channel: firehouseChannelId,
-        text: ` :siren-real: <@U062U3SQ2T1> \`${matched}\` :siren-real: \n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
+        text: `:siren-real: <@U062U3SQ2T1> ${uniqueMatchedWords.join(', ')} :siren-real: \n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
       });
 
+      console.log(`Logged banned words: ${uniqueMatchedWords.join(', ')} from user ${event.user}`);
+
     } catch (err) {
-      console.error('error:', err);
+      console.error('Error posting message:', err);
     }
   }
 
   res.sendStatus(200);
 });
 
-app.listen(port, () => {
-});
+app.listen(port);
