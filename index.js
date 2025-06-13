@@ -6,6 +6,7 @@ const bodyParser = require('body-parser');
 
 const app = express();
 const slack = new WebClient(process.env.TOKEN);
+const userSlack = new WebClient(process.env.USER_TOKEN);
 const port = process.env.PORT;
 
 const bannedWords = process.env.BANNED_WORDS
@@ -23,8 +24,6 @@ let botUserId;
     process.exit(1);
   }
 })();
-
-app.use(bodyParser.json());
 
 function verifySlackRequest(req, res, buf) {
   const timestamp = req.headers['x-slack-request-timestamp'];
@@ -44,24 +43,12 @@ function verifySlackRequest(req, res, buf) {
   }
 }
 
-app.use((req, res, next) => {
-  if (req.headers['x-slack-signature']) {
-    try {
-      bodyParser.json({ verify: verifySlackRequest })(req, res, next);
-    } catch (err) {
-      return res.status(400).send('Bad signature');
-    }
-  } else {
-    next();
-  }
-});
+app.use(bodyParser.json({ verify: verifySlackRequest }));
 
 app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
+  if (type === 'url_verification') return res.status(200).send({ challenge });
 
-  if (type === 'url_verification') {
-    return res.status(200).send({ challenge });
-  }
   if (event && event.type === 'message' && !event.subtype) {
     if (event.user === botUserId) return res.sendStatus(200);
 
@@ -71,12 +58,7 @@ app.post('/slack/events', async (req, res) => {
     const matchedWords = bannedWords.filter(word => text.includes(word));
     if (matchedWords.length === 0) return res.sendStatus(200);
 
-    const uniqueMatchedWords = [...new Set(matchedWords)];
-
     try {
-      const firehouseChannelId = process.env.FIREHOUSE;
-      if (!firehouseChannelId) return res.sendStatus(200);
-
       const permalink = await slack.chat.getPermalink({
         channel: event.channel,
         message_ts: event.ts,
@@ -86,14 +68,17 @@ app.post('/slack/events', async (req, res) => {
       const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
       await slack.chat.postMessage({
-        channel: firehouseChannelId,
-        text: `:siren-real: <@U062U3SQ2T1> ${uniqueMatchedWords.join(', ')} :siren-real: \n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
+        channel: process.env.FIREHOUSE,
+        text: `:siren-real: <@U062U3SQ2T1> ${matchedWords.join(', ')} :siren-real:\n*user:* <@${event.user}> (${username})\n*message:* >>> ${event.text}\n🔗 <${permalink.permalink}>`
       });
 
-      console.log(`Logged banned words: ${uniqueMatchedWords.join(', ')} from user ${event.user}`);
+      await userSlack.chat.delete({
+        channel: event.channel,
+        ts: event.ts
+      });
 
     } catch (err) {
-      console.error('Error posting message:', err);
+      console.error('error:', err);
     }
   }
 
