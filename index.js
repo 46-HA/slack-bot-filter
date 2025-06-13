@@ -77,6 +77,27 @@ app.post('/slack/events', async (req, res) => {
         ts: event.ts
       });
 
+      await slack.chat.postEphemeral({
+        channel: event.channel,
+        user: event.user,
+        text:
+          ':siren-real: MESSAGE DELETED :siren-real:\n' +
+          "Your message violated <https://hackclub.com/conduct/|Hack Club's Code of Conduct>. " +
+          'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
+          'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
+          'Please try to keep Hack Club a safe space for everyone. Thank you.'
+      });
+
+      await slack.chat.postMessage({
+        channel: event.user,
+        text:
+          ':siren-real: MESSAGE DELETED :siren-real:\n' +
+          "Your message violated <https://hackclub.com/conduct/|Hack Club's Code of Conduct>. " +
+          'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
+          'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
+          'Please try to keep Hack Club a safe space for everyone. Thank you.'
+      });
+
     } catch (err) {
       console.error('error:', err);
     }
