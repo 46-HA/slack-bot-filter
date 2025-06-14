@@ -49,6 +49,49 @@ function verifySlackRequest(req, res, buf) {
 
 app.use(bodyParser.json({ verify: verifySlackRequest }));
 
+function normalizeChar(char) {
+  const substitutions = {
+    '@': 'a',
+    '!': 'i',
+    '1': 'i',
+    '$': 's',
+    '0': 'o',
+    '3': 'e',
+    '4': 'a',
+    '*': '',
+    '#': 'h',
+    '|': 'i',
+    '+': '',
+    '^': '',
+    '%': '',
+    '&': '',
+    '(': '',
+    ')': '',
+    '_': '',
+    '=': '',
+    '`': '',
+    '~': '',
+  };
+  return substitutions[char] || char;
+}
+
+function normalizeText(text) {
+  return text
+    .toLowerCase()
+    .split('')
+    .map(c => normalizeChar(c))
+    .join('')
+    .replace(/[^a-z]/g, '');
+}
+
+function buildLooseRegex(word) {
+  let pattern = '';
+  for (const char of word) {
+    pattern += `${char}+[^a-zA-Z0-9]*`;
+  }
+  return new RegExp(pattern, 'i');
+}
+
 app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
   if (type === 'url_verification') return res.status(200).send({ challenge });
@@ -56,60 +99,65 @@ app.post('/slack/events', async (req, res) => {
   if (event && event.type === 'message' && !event.subtype) {
     if (event.user === botUserId) return res.sendStatus(200);
 
-    const text = event.text?.toLowerCase();
-    if (!text) return res.sendStatus(200);
+    const rawText = event.text || '';
+    const text = rawText.toLowerCase();
+    const normalizedText = normalizeText(text);
 
-    const matchedWords = bannedWords.filter(word => text.includes(word));
-    if (matchedWords.length === 0) return res.sendStatus(200);
+    const matchedWords = bannedWords.filter(word => {
+      const regex = buildLooseRegex(word);
+      return regex.test(normalizedText);
+    });
 
-    try {
-      const permalink = await slack.chat.getPermalink({
-        channel: event.channel,
-        message_ts: event.ts,
-      });
+    if (matchedWords.length > 0) {
+      try {
+        const permalink = await slack.chat.getPermalink({
+          channel: event.channel,
+          message_ts: event.ts,
+        });
 
-      const userInfo = await slack.users.info({ user: event.user });
-      const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
+        const userInfo = await slack.users.info({ user: event.user });
+        const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
-      await slack.chat.postMessage({
-        channel: 'C07FL3G62LF',
-        text: `:siren-real: Message "${event.text}" auto deleted in <#${event.channel}>. It was sent by: <@${event.user}>. :siren-real: \n 🔗 <${permalink.permalink}> \n Reply with :white_check_mark: once dealt with.`
-      });
+        await slack.chat.postMessage({
+          channel: 'C091Y7GSQ7J', // change this to your channel
+          text: `:siren-real: Message "${event.text}" auto deleted in <#${event.channel}>. It was sent by: <@${event.user}>. :siren-real: \n 🔗 <${permalink.permalink}> \n Reply with :white_check_mark: once dealt with.`
+        });
 
-      await userSlack.chat.delete({
-        channel: event.channel,
-        ts: event.ts
-      });
+        await userSlack.chat.delete({
+          channel: event.channel,
+          ts: event.ts
+        });
 
-      await slack.chat.postEphemeral({
-        channel: event.channel,
-        user: event.user,
-        text:
-          ':siren-real: MESSAGE DELETED :siren-real:\n' +
-          "Your message violated <https://hackclub.com/conduct/|Hack Club's Code of Conduct>. " +
-          'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
-          'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
-          'Please try to keep Hack Club a safe space for everyone. Thank you.'
-      });
+        await slack.chat.postEphemeral({
+          channel: event.channel,
+          user: event.user,
+          text:
+            ':siren-real: MESSAGE DELETED :siren-real:\n' +
+            "Your message violated <https://hackclub.com/conduct/|Hack Club's Code of Conduct>. " +
+            'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
+            'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
+            'Please try to keep Hack Club a safe space for everyone. Thank you.'
+        });
 
-      await slack.chat.postMessage({
-        channel: event.user,
-        text:
-          ':siren-real: MESSAGE DELETED :siren-real:\n' +
-          "Your message violated <https://hackclub.com/conduct/|Hack Club's Code of Conduct>. " +
-          'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
-          'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
-          'Please try to keep Hack Club a safe space for everyone. Thank you.'
-      });
+        await slack.chat.postMessage({
+          channel: event.user,
+          text:
+            ':siren-real: MESSAGE DELETED :siren-real:\n' +
+            "Your message violated <https://hackclub.com/conduct/|Hack Club's Code of Conduct>. " +
+            'A Fire Department member should contact you soon. If you believe this was an error, please let us know. ' +
+            'Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. ' +
+            'Please try to keep Hack Club a safe space for everyone. Thank you.'
+        });
 
-      await base(airtableTable).create({
-        "Display Name (user)": username,
-        "User ID": event.user,
-        "Message": event.text
-      });
+        await base(airtableTable).create({
+          "Display Name (user)": username,
+          "User ID": event.user,
+          "Message": event.text
+        });
 
-    } catch (err) {
-      console.error('error:', err);
+      } catch (err) {
+        console.error('error:', err);
+      }
     }
   }
 
