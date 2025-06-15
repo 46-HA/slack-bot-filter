@@ -1,20 +1,20 @@
+require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
 const crypto = require('crypto');
 const { WebClient } = require('@slack/web-api');
 const bodyParser = require('body-parser');
 const Airtable = require('airtable');
-require('dotenv').config();
 
 const app = express();
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 const userSlack = new WebClient(process.env.SLACK_APP_TOKEN);
 const port = process.env.PORT;
 
-const bannedWords = fs.readFileSync('./.profanitylist', 'utf-8')
+const bannedPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
   .split('\n')
-  .map(w => w.trim().toLowerCase())
-  .filter(w => w.length > 0 && !w.startsWith('#'));
+  .map(line => line.trim().toLowerCase())
+  .filter(line => line.length > 0 && !line.startsWith('#'));
 
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
 const airtableTable = process.env.AIRTABLE_TABLE;
@@ -50,9 +50,10 @@ function normalizeText(text) {
   return text.toLowerCase().split('').map(c => normalizeChar(c)).join('').replace(/[^a-z]/g, '');
 }
 
-function buildLooseRegex(word) {
+function buildLooseRegex(phrase) {
+  const normalized = normalizeText(phrase);
   let pattern = '';
-  for (const char of word) {
+  for (const char of normalized) {
     pattern += `${char}+[^a-zA-Z0-9]*`;
   }
   return new RegExp(pattern, 'i');
@@ -66,15 +67,14 @@ app.post('/slack/events', async (req, res) => {
     if (event.user === botUserId) return res.sendStatus(200);
 
     const rawText = event.text || '';
-    const text = rawText.toLowerCase();
-    const normalizedText = normalizeText(text);
+    const normalizedText = normalizeText(rawText.toLowerCase());
 
-    const matchedWords = bannedWords.filter(word => {
-      const regex = buildLooseRegex(word);
+    const matchedPhrases = bannedPhrases.filter(phrase => {
+      const regex = buildLooseRegex(phrase);
       return regex.test(normalizedText);
     });
 
-    if (matchedWords.length > 0) {
+    if (matchedPhrases.length > 0) {
       try {
         const permalink = await slack.chat.getPermalink({
           channel: event.channel,
@@ -85,7 +85,7 @@ app.post('/slack/events', async (req, res) => {
         const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
         await slack.chat.postMessage({
-          channel: 'C091Y7GSQ7J',  //change this to your channel
+          channel: 'C091Y7GSQ7J',
           text: `:siren-real: Message "${event.text}" auto deleted in <#${event.channel}>. It was sent by: <@${event.user}>. :siren-real: \n 🔗 <${permalink.permalink}> \n Reply with :white_check_mark: once dealt with.`
         });
 
