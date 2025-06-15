@@ -23,11 +23,18 @@ TOKEN=(bot-token)
 USER_TOKEN=(user-token)
 SIGNING=(signing-secret)
 FIREHOUSE=(channel ID to send the logs to)
-BANNED_WORDS=(bad words, use this format: bad,word,chicken)
 PORT=(port number your server will run on)
 AIRTABLE_API_KEY=(personal access key)
 AIRTABLE_BASE_ID=(base id)
 AIRTABLE_TABLE=(name of the table)
+```
+
+Create a `.profanitylist` to add words to filter.
+For example: 
+```
+test
+chicken
+badword
 ```
 
 ## Step 4
