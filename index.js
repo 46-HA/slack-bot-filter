@@ -9,7 +9,7 @@ const Airtable = require('airtable');
 const app = express();
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 const userSlack = new WebClient(process.env.SLACK_APP_TOKEN);
-const port = process.env.PORT;
+const port = 3001;
 
 const bannedPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
   .split('\n')
