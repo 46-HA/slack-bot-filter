@@ -1,4 +1,4 @@
-// index.js
+//to-do tomorrow: fix commands and build kit
 require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
@@ -12,19 +12,16 @@ const slack = new WebClient(process.env.TOKEN);
 const userSlack = new WebClient(process.env.USER_TOKEN);
 const port = process.env.PORT || 3001;
 
-// for words that are sent for review
 const softPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
   .split('\n')
   .map(line => line.trim().toLowerCase())
   .filter(line => line.length > 0 && !line.startsWith('#'));
 
-// for words that are automatically deleted
 const hardPhrases = fs.readFileSync('./.slurlist', 'utf-8')
   .split('\n')
   .map(line => line.trim().toLowerCase())
   .filter(line => line.length > 0 && !line.startsWith('#'));
 
-  // initalize airtable
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
 const airtableTable = process.env.AIRTABLE_TABLE;
 
@@ -35,7 +32,6 @@ let botUserId;
   botUserId = authRes.user_id;
 })();
 
-//  event subscription verification (i spent wayyy too loong on this)
 function verifySlackRequest(req, res, buf) {
   const timestamp = req.headers['x-slack-request-timestamp'];
   const sigBaseString = `v0:${timestamp}:${buf.toString()}`;
@@ -48,32 +44,27 @@ function verifySlackRequest(req, res, buf) {
 
 app.use(bodyParser.json({ verify: verifySlackRequest }));
 
-// filter to find disguised text
-function normalizeTextForMatching(text) {
+function normalizeChar(char) {
   const substitutions = {
     '@': 'a', '!': 'i', '1': 'i', '$': 's', '0': 'o', '3': 'e', '4': 'a', '*': '', '#': 'h',
     '|': 'i', '+': '', '^': '', '%': '', '&': '', '(': '', ')': '', '_': '', '=': '', '`': '', '~': ''
   };
-  return text.toLowerCase().split('').map(c => substitutions[c] || c).join('');
+  return substitutions[char] || char;
 }
 
-function buildAccurateRegex(phrase) {
-  const normalized = normalizeTextForMatching(phrase.trim());
-  const escaped = normalized.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+function normalizeText(text) {
+  return text.toLowerCase().split('').map(c => normalizeChar(c)).join('').replace(/[^a-z]/g, '');
+}
 
+function buildLooseRegex(phrase) {
+  const normalized = normalizeText(phrase);
   let pattern = '';
-  for (const char of escaped) {
-    if (char === ' ') {
-      pattern += '\\s+';
-    } else {
-      pattern += `${char}+[^a-zA-Z0-9]*`;
-    }
+  for (const char of normalized) {
+    pattern += `${char}+[^a-zA-Z0-9]*`;
   }
-
   return new RegExp(`\\b${pattern}\\b`, 'i');
 }
 
-// more slack events
 app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
 
@@ -85,10 +76,10 @@ app.post('/slack/events', async (req, res) => {
     if (event.user === botUserId) return res.sendStatus(200);
 
     const rawText = event.text || '';
-    const normalizedText = normalizeTextForMatching(rawText);
+    const normalizedText = normalizeText(rawText.toLowerCase());
 
-    const hardMatch = hardPhrases.find(phrase => buildAccurateRegex(phrase).test(normalizedText));
-    const softMatch = softPhrases.find(phrase => buildAccurateRegex(phrase).test(normalizedText));
+    const hardMatch = hardPhrases.find(phrase => buildLooseRegex(phrase).test(normalizedText));
+    const softMatch = softPhrases.find(phrase => buildLooseRegex(phrase).test(normalizedText));
 
     try {
       const permalink = await slack.chat.getPermalink({
@@ -100,9 +91,43 @@ app.post('/slack/events', async (req, res) => {
       const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
       if (hardMatch) {
+        // Firehouse alert with Block Kit and button
         await slack.chat.postMessage({
           channel: process.env.FIREHOUSE,
-          text: `:siren-real: Message auto-deleted in <#${event.channel}> by <@${event.user}>.\n🔗 <${permalink.permalink}>\n:white_check_mark: Reply once dealt with.`
+          text: `Message auto-deleted in <#${event.channel}> by <@${event.user}>.`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `:rotating_light: *Auto-Deleted Message Detected* :rotating_light:\n*User:* <@${event.user}> (${username})\n*Channel:* <#${event.channel}>\n*Message:* ${event.text}`
+              }
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: `🔗 <${permalink.permalink}|View original message>`
+                }
+              ]
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: {
+                    type: "plain_text",
+                    text: "Mark as Dealt With",
+                    emoji: true
+                  },
+                  value: "mark_dealt_with",
+                  action_id: "mark_dealt_with"
+                }
+              ]
+            }
+          ]
         });
 
         await userSlack.chat.delete({
@@ -112,22 +137,57 @@ app.post('/slack/events', async (req, res) => {
 
         await slack.chat.postEphemeral({
           channel: event.channel,
-          user: event.user, // message for deletion (ephemeral)
-          text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban.'
+          user: event.user,
+          text: 'Message deleted due to Code of Conduct violation.',
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: ":rotating_light: *MESSAGE DELETED*\nYour message violated the Hack Club Code of Conduct. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban."
+              }
+            }
+          ]
         });
 
         await slack.chat.postMessage({
-          channel: event.user, // message DMed
-          text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban.'
+          channel: event.user,
+          text: 'Message deleted due to Code of Conduct violation.',
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: ":rotating_light: *MESSAGE DELETED*\nYour message violated the Hack Club Code of Conduct. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban."
+              }
+            }
+          ]
         });
 
       } else if (softMatch) {
         await slack.chat.postMessage({
-          channel: process.env.REVIEW, // channel sent to the moderation review channel
-          text: `:warning: Possible flagged message in <#${event.channel}> from <@${event.user}>:\n>>> ${event.text}\n🔗 <${permalink.permalink}>`
+          channel: process.env.REVIEW,
+          text: `Possible flagged message from <@${event.user}> in <#${event.channel}>.`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `:warning: *Potentially Inappropriate Message*\n*User:* <@${event.user}> (${username})\n*Channel:* <#${event.channel}>\n*Message:*\n>>> ${event.text}`
+              }
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: `🔗 <${permalink.permalink}|View message>`
+                }
+              ]
+            }
+          ]
         });
-        
-        // send to airtable
+
         await base(airtableTable).create({
           "Display Name (user)": username,
           "User ID": event.user,
@@ -142,6 +202,6 @@ app.post('/slack/events', async (req, res) => {
   res.sendStatus(200);
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+app.listen(port,() => {
+  console.log(`Server running on port ${port}`);
 });
