@@ -7,9 +7,9 @@ const bodyParser = require('body-parser');
 const Airtable = require('airtable');
 
 const app = express();
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
-const userSlack = new WebClient(process.env.SLACK_APP_TOKEN);
-const port = 3001;
+const slack = new WebClient(process.env.TOKEN);
+const userSlack = new WebClient(process.env.USER_TOKEN);
+const port = process.env.PORT || 3001;
 
 const bannedPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
   .split('\n')
@@ -29,7 +29,7 @@ let botUserId;
 function verifySlackRequest(req, res, buf) {
   const timestamp = req.headers['x-slack-request-timestamp'];
   const sigBaseString = `v0:${timestamp}:${buf.toString()}`;
-  const mySignature = 'v0=' + crypto.createHmac('sha256', process.env.SLACK_SIGNING_SECRET).update(sigBaseString).digest('hex');
+  const mySignature = 'v0=' + crypto.createHmac('sha256', process.env.SIGNING).update(sigBaseString).digest('hex');
   const slackSignature = req.headers['x-slack-signature'];
   if (!slackSignature || !crypto.timingSafeEqual(Buffer.from(mySignature), Buffer.from(slackSignature))) {
     throw new Error('signature failed');
@@ -61,7 +61,10 @@ function buildLooseRegex(phrase) {
 
 app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
-  if (type === 'url_verification') return res.status(200).send({ challenge });
+
+  if (type === 'url_verification') {
+    return res.status(200).send(challenge);  // <--- Send raw challenge string here
+  }
 
   if (event && event.type === 'message' && !event.subtype) {
     if (event.user === botUserId) return res.sendStatus(200);
@@ -85,7 +88,7 @@ app.post('/slack/events', async (req, res) => {
         const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
         await slack.chat.postMessage({
-          channel: 'C091Y7GSQ7J',
+          channel: process.env.FIREHOUSE,
           text: `:siren-real: Message "${event.text}" auto deleted in <#${event.channel}>. It was sent by: <@${event.user}>. :siren-real: \n 🔗 <${permalink.permalink}> \n Reply with :white_check_mark: once dealt with.`
         });
 
@@ -120,4 +123,6 @@ app.post('/slack/events', async (req, res) => {
   res.sendStatus(200);
 });
 
-app.listen(port);
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
+});

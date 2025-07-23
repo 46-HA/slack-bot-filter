@@ -5,7 +5,7 @@ const { WebClient } = require('@slack/web-api');
 const bodyParser = require('body-parser');
 
 const app = express();
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+const slack = new WebClient(process.env.TOKEN);
 const port = process.env.PORT;
 
 const bannedWords = process.env.BANNED_WORDS
