@@ -53,7 +53,6 @@ async function getChannelManagers(channelId) {
 
     const json = await response.json();
     if (!json.ok) {
-      // Ignore invalid_auth error silently
       if (json.error !== 'invalid_auth') {
         console.warn('Enterprise API error:', json.error);
       }
@@ -160,7 +159,7 @@ app.post('/slack/commands', async (req, res) => {
     });
   }
 
-  if (command === '/view-banned') {
+  if (command === '/view-list') {
     const bannedSet = bannedWordsByChannel.get(channel_id);
     if (!bannedSet || bannedSet.size === 0) {
       return res.json({
@@ -171,6 +170,56 @@ app.post('/slack/commands', async (req, res) => {
     return res.json({
       response_type: 'ephemeral',
       text: `Banned phrases for this channel: ${[...bannedSet].join(', ')}`,
+    });
+  }
+
+  if (command === '/remove-word') {
+    if (!text || !text.trim()) {
+      return res.json({
+        response_type: 'ephemeral',
+        text: 'Please provide one or more comma-separated phrases to remove.',
+      });
+    }
+
+    const allowed = await isChannelManager(user_id, channel_id);
+    if (!allowed) {
+      return res.json({
+        response_type: 'ephemeral',
+        text: '❌ Only channel managers or creators can remove banned phrases.',
+      });
+    }
+
+    const phrasesToRemove = text
+      .split(',')
+      .map(p => p.trim().toLowerCase())
+      .filter(p => p.length > 0);
+
+    if (!bannedWordsByChannel.has(channel_id)) {
+      return res.json({
+        response_type: 'ephemeral',
+        text: 'No banned phrases set for this channel.',
+      });
+    }
+
+    const bannedSet = bannedWordsByChannel.get(channel_id);
+    let removed = [];
+
+    phrasesToRemove.forEach(phrase => {
+      if (bannedSet.delete(phrase)) {
+        removed.push(phrase);
+      }
+    });
+
+    if (removed.length === 0) {
+      return res.json({
+        response_type: 'ephemeral',
+        text: 'None of the specified phrases were found in the banned list.',
+      });
+    }
+
+    return res.json({
+      response_type: 'ephemeral',
+      text: `Removed banned phrases: ${removed.join(', ')}`,
     });
   }
 
