@@ -30,8 +30,12 @@ AIRTABLE_API_KEY=(personal access key)
 AIRTABLE_BASE_ID=(base id)
 AIRTABLE_TABLE=(name of the table)
 PORT=(port number your server will run on)
+
+XOXC=(Only for slackfilter.js, not needed for firehose)
+XOXD=(Only for slackfilter.js, not needed for firehose)
 ```
 
+(NEEDED for firehose, optional for slackfilter)
 Create a `.profanitylist` for words to be sent for review.
 For example: 
 
@@ -69,7 +73,7 @@ Enable Event Subscriptions and set the Request URL to your endpoint (e.g. your s
 Subscribe to: `message.channels`
 
 ## Step 5: Airtable
-
+(NEEDED for firehose, optional for slackfilter)
 Get a personal access token, link it to your base. Make sure to enable these **Scopes**:
 
 ```
