@@ -1,3 +1,4 @@
+// better filter system TO DO
 require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
@@ -11,7 +12,12 @@ const slack = new WebClient(process.env.TOKEN);
 const userSlack = new WebClient(process.env.USER_TOKEN);
 const port = process.env.PORT || 3001;
 
-const bannedPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
+const softPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
+  .split('\n')
+  .map(line => line.trim().toLowerCase())
+  .filter(line => line.length > 0 && !line.startsWith('#'));
+
+const hardPhrases = fs.readFileSync('./.slurlist', 'utf-8')
   .split('\n')
   .map(line => line.trim().toLowerCase())
   .filter(line => line.length > 0 && !line.startsWith('#'));
@@ -56,14 +62,14 @@ function buildLooseRegex(phrase) {
   for (const char of normalized) {
     pattern += `${char}+[^a-zA-Z0-9]*`;
   }
-  return new RegExp(pattern, 'i');
+  return new RegExp(`\\b${pattern}\\b`, 'i');
 }
 
 app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
 
   if (type === 'url_verification') {
-    return res.status(200).send(challenge);  // <--- Send raw challenge string here
+    return res.status(200).send(challenge);
   }
 
   if (event && event.type === 'message' && !event.subtype) {
@@ -72,24 +78,22 @@ app.post('/slack/events', async (req, res) => {
     const rawText = event.text || '';
     const normalizedText = normalizeText(rawText.toLowerCase());
 
-    const matchedPhrases = bannedPhrases.filter(phrase => {
-      const regex = buildLooseRegex(phrase);
-      return regex.test(normalizedText);
-    });
+    const hardMatch = hardPhrases.find(phrase => buildLooseRegex(phrase).test(normalizedText));
+    const softMatch = softPhrases.find(phrase => buildLooseRegex(phrase).test(normalizedText));
 
-    if (matchedPhrases.length > 0) {
-      try {
-        const permalink = await slack.chat.getPermalink({
-          channel: event.channel,
-          message_ts: event.ts,
-        });
+    try {
+      const permalink = await slack.chat.getPermalink({
+        channel: event.channel,
+        message_ts: event.ts,
+      });
 
-        const userInfo = await slack.users.info({ user: event.user });
-        const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
+      const userInfo = await slack.users.info({ user: event.user });
+      const username = userInfo.user?.real_name || userInfo.user?.name || `<@${event.user}>`;
 
+      if (hardMatch) {
         await slack.chat.postMessage({
           channel: process.env.FIREHOUSE,
-          text: `:siren-real: Message "${event.text}" auto deleted in <#${event.channel}>. It was sent by: <@${event.user}>. :siren-real: \n 🔗 <${permalink.permalink}> \n Reply with :white_check_mark: once dealt with.`
+          text: `:siren-real: Message auto-deleted in <#${event.channel}> by <@${event.user}>.\n🔗 <${permalink.permalink}>\n:white_check_mark: Reply once dealt with.`
         });
 
         await userSlack.chat.delete({
@@ -100,12 +104,18 @@ app.post('/slack/events', async (req, res) => {
         await slack.chat.postEphemeral({
           channel: event.channel,
           user: event.user,
-          text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member should contact you soon. If you believe this was an error, please let us know. Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. Please try to keep Hack Club a safe space for everyone. Thank you.'
+          text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban.'
         });
 
         await slack.chat.postMessage({
           channel: event.user,
-          text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member should contact you soon. If you believe this was an error, please let us know. Using words that violate our Code of Conduct can result in a *permanent ban* depending on their severity. Please try to keep Hack Club a safe space for everyone. Thank you.'
+          text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban.'
+        });
+
+      } else if (softMatch) {
+        await slack.chat.postMessage({
+          channel: process.env.FIREHOUSE,
+          text: `:warning: Possible flagged message in <#${event.channel}> from <@${event.user}>:\n>>> ${event.text}\n🔗 <${permalink.permalink}>`
         });
 
         await base(airtableTable).create({
@@ -113,10 +123,9 @@ app.post('/slack/events', async (req, res) => {
           "User ID": event.user,
           "Message": event.text
         });
-
-      } catch (err) {
-        console.error('error:', err);
       }
+    } catch (err) {
+      console.error('error:', err);
     }
   }
 
