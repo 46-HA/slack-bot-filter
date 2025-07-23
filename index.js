@@ -1,3 +1,4 @@
+// index.js
 require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
@@ -11,16 +12,19 @@ const slack = new WebClient(process.env.TOKEN);
 const userSlack = new WebClient(process.env.USER_TOKEN);
 const port = process.env.PORT || 3001;
 
+// for words that are sent for review
 const softPhrases = fs.readFileSync('./.profanitylist', 'utf-8')
   .split('\n')
   .map(line => line.trim().toLowerCase())
   .filter(line => line.length > 0 && !line.startsWith('#'));
 
+// for words that are automatically deleted
 const hardPhrases = fs.readFileSync('./.slurlist', 'utf-8')
   .split('\n')
   .map(line => line.trim().toLowerCase())
   .filter(line => line.length > 0 && !line.startsWith('#'));
 
+  // initalize airtable
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
 const airtableTable = process.env.AIRTABLE_TABLE;
 
@@ -31,6 +35,7 @@ let botUserId;
   botUserId = authRes.user_id;
 })();
 
+//  event subscription verification (i spent wayyy too loong on this)
 function verifySlackRequest(req, res, buf) {
   const timestamp = req.headers['x-slack-request-timestamp'];
   const sigBaseString = `v0:${timestamp}:${buf.toString()}`;
@@ -43,7 +48,7 @@ function verifySlackRequest(req, res, buf) {
 
 app.use(bodyParser.json({ verify: verifySlackRequest }));
 
-// Normalize text but keep spaces for word boundaries
+// filter to find disguised text
 function normalizeTextForMatching(text) {
   const substitutions = {
     '@': 'a', '!': 'i', '1': 'i', '$': 's', '0': 'o', '3': 'e', '4': 'a', '*': '', '#': 'h',
@@ -52,7 +57,6 @@ function normalizeTextForMatching(text) {
   return text.toLowerCase().split('').map(c => substitutions[c] || c).join('');
 }
 
-// Build regex that matches fuzzy chars but respects word boundaries
 function buildAccurateRegex(phrase) {
   const normalized = normalizeTextForMatching(phrase.trim());
   const escaped = normalized.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -69,11 +73,12 @@ function buildAccurateRegex(phrase) {
   return new RegExp(`\\b${pattern}\\b`, 'i');
 }
 
+// more slack events
 app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
 
   if (type === 'url_verification') {
-    return res.status(200).send(challenge); // Send raw challenge string
+    return res.status(200).send(challenge);
   }
 
   if (event && event.type === 'message' && !event.subtype) {
@@ -107,21 +112,22 @@ app.post('/slack/events', async (req, res) => {
 
         await slack.chat.postEphemeral({
           channel: event.channel,
-          user: event.user,
+          user: event.user, // message for deletion (ephemeral)
           text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban.'
         });
 
         await slack.chat.postMessage({
-          channel: event.user,
+          channel: event.user, // message DMed
           text: ':siren-real: MESSAGE DELETED :siren-real:\nYour message violated <https://hackclub.com/conduct/|Hack Club\'s Code of Conduct>. A Fire Department member will contact you soon. Please keep Hack Club a safe space. Repeated violations may result in a ban.'
         });
 
       } else if (softMatch) {
         await slack.chat.postMessage({
-          channel: process.env.FIREHOUSE,
+          channel: process.env.REVIEW, // channel sent to the moderation review channel
           text: `:warning: Possible flagged message in <#${event.channel}> from <@${event.user}>:\n>>> ${event.text}\n🔗 <${permalink.permalink}>`
         });
-
+        
+        // send to airtable
         await base(airtableTable).create({
           "Display Name (user)": username,
           "User ID": event.user,

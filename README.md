@@ -4,10 +4,12 @@
 
 # Filter Bot
 
-Hello! This is a very simple filter bot for Slack. Here is how you can set it up:
+This is a simple filter bot for Slack. It includes a list of words for review and another list for automatic deletion. Here is how you can set it up:
 
 ## Step 1
 Clone the repo
+`git clone https://github.com/46-HA/slack-bot-filter.git
+`
 
 ## Step 2
 Install dependencies by running:
@@ -22,20 +24,32 @@ Create a `.env` file and add the following variables:
 TOKEN=(bot-token)
 USER_TOKEN=(user-token)
 SIGNING=(signing-secret)
-FIREHOUSE=(channel ID to send the logs to)
-PORT=(port number your server will run on)
+FIREHOUSE=(channel logs for automatic deletion)
+REVIEW=(channel logs for reviewing. keep same if you want it sent to the same channel)
 AIRTABLE_API_KEY=(personal access key)
 AIRTABLE_BASE_ID=(base id)
 AIRTABLE_TABLE=(name of the table)
+PORT=(port number your server will run on)
 ```
 
-Create a `.profanitylist` to add words to filter.
+Create a `.profanitylist` for words to be sent for review.
 For example: 
+
+Create a `.slurlist` for words to automatically delete.
+For example: 
+```
+slur 1
+slur 2
+slur 3
+```
+
 ```
 test
 chicken
 badword
 ```
+
+
 
 ## Step 4
 On your Slack app settings:
