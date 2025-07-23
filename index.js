@@ -1,4 +1,3 @@
-// better filter system TO DO
 require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
@@ -44,24 +43,29 @@ function verifySlackRequest(req, res, buf) {
 
 app.use(bodyParser.json({ verify: verifySlackRequest }));
 
-function normalizeChar(char) {
+// Normalize text but keep spaces for word boundaries
+function normalizeTextForMatching(text) {
   const substitutions = {
     '@': 'a', '!': 'i', '1': 'i', '$': 's', '0': 'o', '3': 'e', '4': 'a', '*': '', '#': 'h',
     '|': 'i', '+': '', '^': '', '%': '', '&': '', '(': '', ')': '', '_': '', '=': '', '`': '', '~': ''
   };
-  return substitutions[char] || char;
+  return text.toLowerCase().split('').map(c => substitutions[c] || c).join('');
 }
 
-function normalizeText(text) {
-  return text.toLowerCase().split('').map(c => normalizeChar(c)).join('').replace(/[^a-z]/g, '');
-}
+// Build regex that matches fuzzy chars but respects word boundaries
+function buildAccurateRegex(phrase) {
+  const normalized = normalizeTextForMatching(phrase.trim());
+  const escaped = normalized.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
-function buildLooseRegex(phrase) {
-  const normalized = normalizeText(phrase);
   let pattern = '';
-  for (const char of normalized) {
-    pattern += `${char}+[^a-zA-Z0-9]*`;
+  for (const char of escaped) {
+    if (char === ' ') {
+      pattern += '\\s+';
+    } else {
+      pattern += `${char}+[^a-zA-Z0-9]*`;
+    }
   }
+
   return new RegExp(`\\b${pattern}\\b`, 'i');
 }
 
@@ -69,17 +73,17 @@ app.post('/slack/events', async (req, res) => {
   const { type, challenge, event } = req.body;
 
   if (type === 'url_verification') {
-    return res.status(200).send(challenge);
+    return res.status(200).send(challenge); // Send raw challenge string
   }
 
   if (event && event.type === 'message' && !event.subtype) {
     if (event.user === botUserId) return res.sendStatus(200);
 
     const rawText = event.text || '';
-    const normalizedText = normalizeText(rawText.toLowerCase());
+    const normalizedText = normalizeTextForMatching(rawText);
 
-    const hardMatch = hardPhrases.find(phrase => buildLooseRegex(phrase).test(normalizedText));
-    const softMatch = softPhrases.find(phrase => buildLooseRegex(phrase).test(normalizedText));
+    const hardMatch = hardPhrases.find(phrase => buildAccurateRegex(phrase).test(normalizedText));
+    const softMatch = softPhrases.find(phrase => buildAccurateRegex(phrase).test(normalizedText));
 
     try {
       const permalink = await slack.chat.getPermalink({
