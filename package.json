@@ -1,10 +1,19 @@
 {
+  "name": "slack-bot-filter",
+  "version": "1.0.0",
+  "description": "Slack bot to filter banned words",
+  "main": "slackfilter.js",
+  "scripts": {
+    "start": "node slackfilter.js"
+  },
   "dependencies": {
     "@slack/web-api": "^7.9.3",
     "airtable": "^0.12.2",
     "body-parser": "^2.2.0",
     "crypto": "^1.0.1",
     "dotenv": "^16.6.1",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "node-fetch": "^2.6.7",
+    "form-data": "^4.0.0"
   }
 }
