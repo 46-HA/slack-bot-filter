@@ -1,4 +1,4 @@
-//to-do tomorrow: fix commands and build kit
+//remove slash commands
 require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
